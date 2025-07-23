@@ -23,7 +23,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
             <MessageCircle className="w-20 h-20 mx-auto mb-4" />
           </div>
           <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-yellow-300 via-pink-300 to-purple-300 bg-clip-text text-transparent">
-            FunkyChat
+            Tawksee
           </h1>
           <p className="text-xl md:text-2xl mb-8 max-w-2xl mx-auto opacity-90">
             Chat with style! The most fun and colorful messaging experience ever
@@ -53,7 +53,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
       <section className="py-16 px-4">
         <div className="container mx-auto">
           <h2 className="text-4xl font-bold text-center mb-12 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-            Why Choose FunkyChat?
+            Why Choose Tawksee?
           </h2>
 
           <div className="grid md:grid-cols-3 gap-8">

@@ -14,6 +14,7 @@ import EmojiPicker from "./EmojiPicker";
 import TypingIndicator from "./TypingIndicator";
 import MediaPicker from "./MediaPicker";
 import CallInterface from "./CallInterface";
+import { Socket } from "socket.io-client";
 
 interface ChatWindowProps {
   chat: Chat;
@@ -22,6 +23,7 @@ interface ChatWindowProps {
   onReaction: (messageId: string, emoji: string) => void;
   onShowSidebar: () => void;
   isMobile: boolean;
+  socket: Socket; // Added socket prop
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -31,15 +33,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onReaction,
   onShowSidebar,
   isMobile,
+  socket,
 }) => {
   const [message, setMessage] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showMediaPicker, setShowMediaPicker] = useState(false);
   const [activeCall, setActiveCall] = useState<"audio" | "video" | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [othersTyping, setOthersTyping] = useState<string[]>([]); // Track who's typing
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<number | null>(null);
 
   const otherParticipant = chat.participants.find((p) => p.id !== user.id);
   const displayName = chat.name || otherParticipant?.name || "Unknown";
@@ -49,20 +54,89 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat.messages]);
 
+  // Socket listeners for typing indicators
   useEffect(() => {
-    // Simulate typing indicator
-    if (message && !isTyping) {
+    const handleTyping = (data: {
+      userId: string;
+      chatId: string;
+      isTyping: boolean;
+      userName: string;
+    }) => {
+      if (data.chatId === chat.id && data.userId !== user.id) {
+        if (data.isTyping) {
+          setOthersTyping((prev) =>
+            prev.includes(data.userName) ? prev : [...prev, data.userName]
+          );
+        } else {
+          setOthersTyping((prev) =>
+            prev.filter((name) => name !== data.userName)
+          );
+        }
+      }
+    };
+
+    socket.on("user-typing", handleTyping);
+    socket.on("user-stopped-typing", handleTyping);
+
+    return () => {
+      socket.off("user-typing");
+      socket.off("user-stopped-typing");
+    };
+  }, [chat.id, user.id, socket]);
+
+  // Handle typing indicator emission
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setMessage(value);
+
+    // Emit typing start
+    if (!isTyping && value.trim()) {
       setIsTyping(true);
-      const timeout = setTimeout(() => setIsTyping(false), 2000);
-      return () => clearTimeout(timeout);
+      socket.emit("typing-start", {
+        chatId: chat.id,
+        userId: user.id,
+        userName: user.name,
+      });
     }
-  }, [message, isTyping]);
+
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set timeout to stop typing
+    typingTimeoutRef.current = setTimeout(() => {
+      if (isTyping) {
+        setIsTyping(false);
+        socket.emit("typing-stop", {
+          chatId: chat.id,
+          userId: user.id,
+          userName: user.name,
+        });
+      }
+    }, 1000); // Stop typing after 1 second of inactivity
+  };
 
   const handleSend = () => {
     if (message.trim()) {
       onSendMessage(message.trim());
       setMessage("");
-      setIsTyping(false);
+
+      // Stop typing indicator
+      if (isTyping) {
+        setIsTyping(false);
+        socket.emit("typing-stop", {
+          chatId: chat.id,
+          userId: user.id,
+          userName: user.name,
+        });
+      }
+
+      // Clear typing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
       inputRef.current?.focus();
     }
   };
@@ -114,11 +188,34 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const startCall = (type: "audio" | "video") => {
     setActiveCall(type);
+
+    // Emit call initiation to other participants
+    socket.emit("call-initiate", {
+      chatId: chat.id,
+      callType: type,
+      initiatorId: user.id,
+      initiatorName: user.name,
+    });
   };
 
   const endCall = () => {
     setActiveCall(null);
+
+    // Emit call end to other participants
+    socket.emit("call-end", {
+      chatId: chat.id,
+      userId: user.id,
+    });
   };
+
+  // Cleanup typing timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   if (activeCall) {
     return (
@@ -138,6 +235,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       />
     );
   }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -163,6 +261,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 {otherParticipant?.isOnline ? "Online" : "Last seen recently"}
+                {othersTyping.length > 0 && (
+                  <span className="text-green-500 ml-2">typing...</span>
+                )}
               </p>
             </div>
           </div>
@@ -199,9 +300,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             />
           ))}
 
-          {/* Typing Indicator */}
-          {Object.values(chat.isTyping).some((typing) => typing) && (
-            <TypingIndicator avatar={displayAvatar} />
+          {/* Typing Indicator - Show when others are typing */}
+          {othersTyping.length > 0 && (
+            <TypingIndicator
+              avatar={displayAvatar}
+              typingUsers={othersTyping}
+            />
           )}
 
           <div ref={messagesEndRef} />
@@ -224,7 +328,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 ref={inputRef}
                 type="text"
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={handleInputChange}
                 onKeyPress={handleKeyPress}
                 placeholder="Type a funky message..."
                 className="w-full p-3 pr-12 bg-gray-100 dark:bg-gray-700 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800 dark:text-white"

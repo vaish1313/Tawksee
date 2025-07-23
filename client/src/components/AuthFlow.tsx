@@ -117,7 +117,7 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
               <input
                 type={method === "email" ? "email" : "tel"}
                 placeholder={
-                  method === "email" ? "your@email.com" : "+1 (555) 123-4567"
+                  method === "email" ? "your@email.com" : "+91 8578963223"
                 }
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Search,
   Plus,
@@ -10,6 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import { User, Chat } from "../types";
+import socket from "../utils/socket";
 
 interface ChatSidebarProps {
   user: User;
@@ -36,6 +37,21 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (user && user.id) {
+      socket.emit("join", user.id);
+    }
+
+    socket.on("updateOnlineUsers", (ids: string[]) => {
+      setOnlineUsers(ids);
+    });
+
+    return () => {
+      socket.off("updateOnlineUsers");
+    };
+  }, [user]);
 
   const filteredChats = chats.filter(
     (chat) =>
@@ -156,6 +172,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
               chat.name || otherParticipant?.name || "Unknown";
             const displayAvatar = chat.avatar || otherParticipant?.avatar || "";
             const isActive = chat.id === activeChat;
+            const isOnline = onlineUsers.includes(otherParticipant?.id || "");
 
             return (
               <button
@@ -179,7 +196,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                         <Users className="w-3 h-3 text-white" />
                       </div>
                     )}
-                    {chat.type === "direct" && otherParticipant?.isOnline && (
+                    {chat.type === "direct" && isOnline && (
                       <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-gray-800"></div>
                     )}
                   </div>
