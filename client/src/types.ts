@@ -1,11 +1,11 @@
 export interface User {
-  id: string;
+  _id: string;
+  username: string;
   name: string;
   avatar: string;
   status: string;
   statusEmoji: string;
-  phone?: string;
-  email?: string;
+  contact?: string;
   isOnline: boolean;
   lastSeen?: Date;
 }
@@ -14,19 +14,16 @@ export interface Message {
   id: string;
   senderId: string;
   content: string;
-  type: "text" | "image" | "file" | "sticker" | "emoji" | "audio";
+  type: "text" | "image" | "file";
   timestamp: Date;
-  reactions: Reaction[];
-  replyTo?: string;
-}
-
-export interface Reaction {
-  userId: string;
-  emoji: string;
+  reactions: Array<{
+    userId: string;
+    emoji: string;
+  }>;
 }
 
 export interface Chat {
-  id: string;
+  _id: string;
   name?: string;
   type: "direct" | "group";
   participants: User[];

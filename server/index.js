@@ -34,7 +34,8 @@ app.use("/api/chats", chatRoutes);
 
 // Socket.IO
 io.on("connection", (socket) => {
-  socketHandler(io, socket);
+  // Support async socketHandler
+  Promise.resolve(socketHandler(io, socket));
 });
 
 // Start server

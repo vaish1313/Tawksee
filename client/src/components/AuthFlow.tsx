@@ -1,33 +1,42 @@
-import { useState } from "react";
-import { Mail, Phone, ArrowRight, CheckCircle } from "lucide-react";
+import React, { useState } from "react";
+import { ArrowLeft, User, Lock, Mail, Phone, ArrowRight, CheckCircle } from "lucide-react";
 import axios from "axios";
+import socket from "../utils/socket";
 
 interface AuthFlowProps {
   onSuccess: () => void;
 }
 
 const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
-  const [step, setStep] = useState<"method" | "input" | "otp" | "success">(
+  const [step, setStep] = useState<"method" | "input" | "otp" | "profile" | "success" | "login">(
     "method"
   );
   const [method, setMethod] = useState<"email" | "phone">("email");
   const [contact, setContact] = useState("");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleMethodSelect = (selectedMethod: "email" | "phone") => {
-    setMethod(selectedMethod);
-    setStep("input");
+  const handleMethodSelect = (selectedMethod: "email" | "phone" | "login") => {
+    if (selectedMethod === "login") {
+      setStep("login");
+    } else {
+      setMethod(selectedMethod);
+      setStep("input");
+    }
+    setError("");
   };
 
   const handleSendOTP = async () => {
     setIsLoading(true);
+    setError("");
     try {
-      axios.post("http://localhost:5000/api/auth/request-otp", { contact });
-
+      await axios.post("http://localhost:5000/api/auth/request-otp", { contact });
       setStep("otp");
     } catch (error: any) {
-      alert(error?.response?.data?.error || "Failed to send OTP");
+      setError(error?.response?.data?.error || "Failed to send OTP");
     } finally {
       setIsLoading(false);
     }
@@ -38,8 +47,6 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
       const newOtp = [...otp];
       newOtp[index] = value;
       setOtp(newOtp);
-
-      // Auto-focus next input
       if (value && index < 5) {
         const nextInput = document.getElementById(`otp-${index + 1}`);
         nextInput?.focus();
@@ -49,24 +56,64 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
 
   const handleVerifyOTP = async () => {
     setIsLoading(true);
+    setError("");
     try {
+      if (!name.trim() || !username.trim()) {
+        setError("Name and username are required");
+        setIsLoading(false);
+        return;
+      }
       const response = await axios.post(
         "http://localhost:5000/api/auth/verify-otp",
         {
           contact,
           otp: otp.join(""),
+          name: name.trim(),
+          username: username.trim(),
         }
       );
-
       const { token, user } = response.data;
-      localStorage.setItem("token", token); // optionally store JWT
+      localStorage.setItem("funkychat-token", token);
+      // Ensure user object has the correct structure
+      const userWithId = {
+        ...user,
+        _id: user._id || user.id, // Handle both formats
+        username: user.username || user._id || user.id // Fallback to _id if username not present
+      };
+      localStorage.setItem("funkychat-user", JSON.stringify(userWithId));
       setStep("success");
-
+      socket.disconnect();
+      socket.auth = { token };
+      socket.connect();
       setTimeout(() => {
-        onSuccess(); // can be navigation or redirect
+        onSuccess();
       }, 1500);
     } catch (error: any) {
-      alert(error?.response?.data?.error || "OTP verification failed");
+      setError(error?.response?.data?.error || "OTP verification failed");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const response = await axios.post("http://localhost:5000/api/auth/login", {
+        username: username.trim(),
+      });
+      const { token, user } = response.data;
+      localStorage.setItem("funkychat-token", token);
+      // Ensure user object has the correct structure
+      const userWithId = {
+        ...user,
+        _id: user._id || user.id, // Handle both formats
+        username: user.username || user._id || user.id // Fallback to _id if username not present
+      };
+      localStorage.setItem("funkychat-user", JSON.stringify(userWithId));
+      onSuccess();
+    } catch (error: any) {
+      setError(error?.response?.data?.error || "Login failed");
     } finally {
       setIsLoading(false);
     }
@@ -83,7 +130,6 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
             <p className="text-gray-600 dark:text-gray-300 mb-8">
               Choose your preferred verification method
             </p>
-
             <div className="space-y-4">
               <button
                 onClick={() => handleMethodSelect("email")}
@@ -92,7 +138,6 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
                 <Mail className="w-6 h-6" />
                 Continue with Email
               </button>
-
               <button
                 onClick={() => handleMethodSelect("phone")}
                 className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white p-4 rounded-xl hover:from-blue-600 hover:to-purple-600 transform hover:scale-105 transition-all duration-300 flex items-center justify-center gap-3"
@@ -100,10 +145,15 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
                 <Phone className="w-6 h-6" />
                 Continue with Phone
               </button>
+              <button
+                onClick={() => handleMethodSelect("login")}
+                className="w-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white p-4 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transform hover:scale-105 transition-all duration-300 flex items-center justify-center gap-3"
+              >
+                Login with Username
+              </button>
             </div>
           </div>
         )}
-
         {step === "input" && (
           <div>
             <h2 className="text-2xl font-bold mb-2 text-center">
@@ -112,74 +162,95 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
             <p className="text-gray-600 dark:text-gray-300 text-center mb-6">
               We'll send you a verification code
             </p>
-
-            <div className="space-y-4">
-              <input
-                type={method === "email" ? "email" : "tel"}
-                placeholder={
-                  method === "email" ? "your@email.com" : "+91 8578963223"
-                }
-                value={contact}
-                onChange={(e) => setContact(e.target.value)}
-                className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-purple-500 outline-none transition-colors bg-white/50 dark:bg-gray-700/50"
-              />
-
-              <button
-                onClick={handleSendOTP}
-                disabled={!contact || isLoading}
-                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white p-4 rounded-xl hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transform hover:scale-105 transition-all duration-300"
-              >
-                {isLoading ? (
-                  <div className="animate-spin w-6 h-6 border-2 border-white border-t-transparent rounded-full"></div>
-                ) : (
-                  <>
-                    Send Code <ArrowRight className="w-5 h-5" />
-                  </>
-                )}
-              </button>
-            </div>
+            <input
+              type={method === "email" ? "email" : "tel"}
+              placeholder={
+                method === "email" ? "your@email.com" : "+91 8578963223"
+              }
+              value={contact}
+              onChange={(e) => setContact(e.target.value)}
+              className="w-full p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-purple-500 outline-none transition-colors bg-white/50 dark:bg-gray-700/50"
+            />
+            {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+            <button
+              onClick={handleSendOTP}
+              disabled={!contact || isLoading}
+              className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white p-4 rounded-xl hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transform hover:scale-105 transition-all duration-300 mt-4"
+            >
+              {isLoading ? "Sending..." : "Send Code"}
+              <ArrowRight className="w-5 h-5" />
+            </button>
           </div>
         )}
-
         {step === "otp" && (
           <div>
             <h2 className="text-2xl font-bold mb-2 text-center">
               Enter Verification Code
             </h2>
             <p className="text-gray-600 dark:text-gray-300 text-center mb-6">
-              We sent a code to {contact}
+              We sent a code to your {method === "email" ? "email" : "phone"}
             </p>
-
-            <div className="flex gap-2 mb-6 justify-center">
-              {otp.map((digit, index) => (
+            <div className="flex justify-center gap-2 mb-4">
+              {otp.map((digit, idx) => (
                 <input
-                  key={index}
-                  id={`otp-${index}`}
+                  key={idx}
+                  id={`otp-${idx}`}
                   type="text"
+                  inputMode="numeric"
                   maxLength={1}
                   value={digit}
-                  onChange={(e) => handleOTPChange(index, e.target.value)}
-                  className="w-12 h-12 text-center text-xl font-bold rounded-lg border-2 border-gray-200 dark:border-gray-600 focus:border-purple-500 outline-none transition-colors bg-white/50 dark:bg-gray-700/50"
+                  onChange={(e) => handleOTPChange(idx, e.target.value.replace(/\D/g, ""))}
+                  className="w-12 h-12 text-2xl text-center border-2 border-gray-300 rounded-xl focus:border-purple-500 outline-none bg-white/70 dark:bg-gray-700/70"
                 />
               ))}
             </div>
-
+            <div className="mb-4">
+              <input
+                type="text"
+                placeholder="Full Name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full p-3 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-purple-500 outline-none transition-colors bg-white/50 dark:bg-gray-700/50 mb-2"
+              />
+              <input
+                type="text"
+                placeholder="Choose a Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full p-3 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-purple-500 outline-none transition-colors bg-white/50 dark:bg-gray-700/50"
+              />
+            </div>
+            {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
             <button
               onClick={handleVerifyOTP}
-              disabled={otp.join("").length !== 6 || isLoading}
+              disabled={otp.some((d) => !d) || !name || !username || isLoading}
               className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white p-4 rounded-xl hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transform hover:scale-105 transition-all duration-300"
             >
-              {isLoading ? (
-                <div className="animate-spin w-6 h-6 border-2 border-white border-t-transparent rounded-full"></div>
-              ) : (
-                <>
-                  Verify Code <ArrowRight className="w-5 h-5" />
-                </>
-              )}
+              {isLoading ? "Verifying..." : "Verify & Signup"}
+              <ArrowRight className="w-5 h-5" />
             </button>
           </div>
         )}
-
+        {step === "login" && (
+          <div>
+            <h2 className="text-2xl font-bold mb-2 text-center">Login</h2>
+            <input
+              type="text"
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full p-3 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-purple-500 outline-none transition-colors bg-white/50 dark:bg-gray-700/50 mb-4"
+            />
+            {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
+            <button
+              onClick={handleLogin}
+              disabled={!username || isLoading}
+              className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white p-4 rounded-xl hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transform hover:scale-105 transition-all duration-300"
+            >
+              {isLoading ? "Logging in..." : "Login"}
+            </button>
+          </div>
+        )}
         {step === "success" && (
           <div className="text-center">
             <div className="animate-bounce mb-4">
@@ -189,7 +260,7 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
               Verification Successful! 🎉
             </h2>
             <p className="text-gray-600 dark:text-gray-300">
-              Taking you to setup your profile...
+              Taking you to your chats...
             </p>
           </div>
         )}

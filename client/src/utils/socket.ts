@@ -1,9 +1,11 @@
 // src/utils/socket.ts
-import { io, Socket } from "socket.io-client";
+import { io } from "socket.io-client";
 
-const socket: Socket = io("http://localhost:5000", {
-  auth: { token: localStorage.getItem("token") },
-  transports: ["websocket"], // optional, but ensures real-time connection
+const socket = io("http://localhost:5000", {
+  auth: {
+    token: localStorage.getItem("funkychat-token"),
+  },
+  autoConnect: false,
 });
 
 export default socket;

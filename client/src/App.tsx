@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from "react";
 import LandingPage from "./components/LandingPage";
 import AuthFlow from "./components/AuthFlow";
-import ProfileSetup from "./components/ProfileSetup";
 import ChatInterface from "./components/ChatInterface";
-import { User, Chat } from "./types";
+import { User } from "./types";
 
-type AppState = "landing" | "auth" | "profile" | "chat";
+type AppState = "landing" | "auth" | "chat";
 
 function App() {
   const [currentState, setCurrentState] = useState<AppState>("landing");
@@ -34,18 +33,25 @@ function App() {
   }, [theme]);
 
   const handleAuthSuccess = () => {
-    setCurrentState("profile");
-  };
-
-  const handleProfileComplete = (userData: User) => {
-    setUser(userData);
-    localStorage.setItem("funkychat-user", JSON.stringify(userData));
-    setCurrentState("chat");
+    // User is already set in localStorage by AuthFlow
+    const savedUser = localStorage.getItem("funkychat-user");
+    if (savedUser) {
+      const userData = JSON.parse(savedUser);
+      // Ensure user object has the correct structure
+      const userWithId = {
+        ...userData,
+        _id: userData._id || userData.id, // Handle both formats
+        username: userData.username || userData._id || userData.id // Fallback to _id if username not present
+      };
+      setUser(userWithId);
+      setCurrentState("chat");
+    }
   };
 
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem("funkychat-user");
+    localStorage.removeItem("funkychat-token");
     setCurrentState("landing");
   };
 
@@ -61,9 +67,6 @@ function App() {
         <LandingPage onGetStarted={() => setCurrentState("auth")} />
       )}
       {currentState === "auth" && <AuthFlow onSuccess={handleAuthSuccess} />}
-      {currentState === "profile" && (
-        <ProfileSetup onComplete={handleProfileComplete} />
-      )}
       {currentState === "chat" && user && (
         <ChatInterface
           user={user}

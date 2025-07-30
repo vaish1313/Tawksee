@@ -46,7 +46,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<number | null>(null);
 
-  const otherParticipant = chat.participants.find((p) => p.id !== user.id);
+  const otherParticipant = chat.participants.find((p) => p && p._id !== user._id);
   const displayName = chat.name || otherParticipant?.name || "Unknown";
   const displayAvatar = chat.avatar || otherParticipant?.avatar || "";
 
@@ -62,7 +62,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       isTyping: boolean;
       userName: string;
     }) => {
-      if (data.chatId === chat.id && data.userId !== user.id) {
+      if (data.chatId === chat._id && data.userId !== user._id) {
         if (data.isTyping) {
           setOthersTyping((prev) =>
             prev.includes(data.userName) ? prev : [...prev, data.userName]
@@ -82,7 +82,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       socket.off("user-typing");
       socket.off("user-stopped-typing");
     };
-  }, [chat.id, user.id, socket]);
+  }, [chat._id, user._id, socket]);
 
   // Handle typing indicator emission
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,8 +93,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     if (!isTyping && value.trim()) {
       setIsTyping(true);
       socket.emit("typing-start", {
-        chatId: chat.id,
-        userId: user.id,
+        chatId: chat._id,
+        userId: user._id,
         userName: user.name,
       });
     }
@@ -109,8 +109,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       if (isTyping) {
         setIsTyping(false);
         socket.emit("typing-stop", {
-          chatId: chat.id,
-          userId: user.id,
+          chatId: chat._id,
+          userId: user._id,
           userName: user.name,
         });
       }
@@ -126,8 +126,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       if (isTyping) {
         setIsTyping(false);
         socket.emit("typing-stop", {
-          chatId: chat.id,
-          userId: user.id,
+          chatId: chat._id,
+          userId: user._id,
           userName: user.name,
         });
       }
@@ -191,9 +191,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
     // Emit call initiation to other participants
     socket.emit("call-initiate", {
-      chatId: chat.id,
+      chatId: chat._id,
       callType: type,
-      initiatorId: user.id,
+      initiatorId: user._id,
       initiatorName: user.name,
     });
   };
@@ -203,8 +203,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
     // Emit call end to other participants
     socket.emit("call-end", {
-      chatId: chat.id,
-      userId: user.id,
+      chatId: chat._id,
+      userId: user._id,
     });
   };
 
@@ -223,7 +223,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         callType={activeCall}
         participant={
           otherParticipant || {
-            id: "0",
+            _id: "0",
+            username: "unknown",
             name: displayName,
             avatar: displayAvatar,
             status: "",
@@ -295,7 +296,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <MessageBubble
               key={msg.id}
               message={msg}
-              isOwn={msg.senderId === user.id}
+              isOwn={msg.senderId === user._id}
               onReaction={(emoji) => onReaction(msg.id, emoji)}
             />
           ))}
@@ -304,7 +305,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           {othersTyping.length > 0 && (
             <TypingIndicator
               avatar={displayAvatar}
-              typingUsers={othersTyping}
             />
           )}
 

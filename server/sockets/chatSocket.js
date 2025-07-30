@@ -1,47 +1,63 @@
-function socketHandler(io, socket) {
-  console.log("User connected:", socket.id);
+const { verifyToken } = require('../utils/jwt');
+const User = require('../models/User');
 
-  // Store the current user's ID (extracted from auth or client emit)
-  let currentUserId = null;
+async function socketHandler(io, socket) {
+  // Expect token in socket.handshake.auth.token
+  const token = socket.handshake.auth && socket.handshake.auth.token;
+  const payload = token && verifyToken(token);
+  if (!payload || !payload.id) {
+    socket.disconnect(true);
+    return;
+  }
+
+  // Check user exists in DB
+  const user = await User.findById(payload.id);
+  if (!user) {
+    socket.disconnect(true);
+    return;
+  }
+
+  const currentUserId = user._id.toString();
 
   // Handle joining a room
-  socket.on("join-room", ({ chatId, userId }) => {
-    currentUserId = userId;
+  socket.on('join-room', async ({ chatId, userId }) => {
+    // Only allow if userId matches token
+    if (userId !== currentUserId) return;
     socket.join(chatId);
-    console.log(`User ${userId} joined room ${chatId}`);
-
-    // Notify other users in the room
-    socket.to(chatId).emit("user-joined", { userId, chatId });
-
-    // Track online users (optional - for global list)
+    socket.to(chatId).emit('user-joined', { userId, chatId });
+    // Track online users
     const onlineUsers = Array.from(io.sockets.sockets.values())
-      .map((s) => s.handshake.auth?.token || s.userId)
+      .map((s) => s.handshake.auth?.token && verifyToken(s.handshake.auth.token)?.id)
       .filter(Boolean);
-
-    io.emit("users-online", onlineUsers);
+    io.emit('users-online', onlineUsers);
   });
 
   // Handle leaving a room
-  socket.on("leave-room", ({ chatId, userId }) => {
+  socket.on('leave-room', ({ chatId, userId }) => {
+    if (userId !== currentUserId) return;
     socket.leave(chatId);
-    console.log(`User ${userId} left room ${chatId}`);
-    socket.to(chatId).emit("user-left", { userId, chatId });
+    socket.to(chatId).emit('user-left', { userId, chatId });
   });
 
   // Handle incoming messages
-  socket.on("send-message", (data) => {
-    const { chatId } = data;
-    socket.to(chatId).emit("receive-message", data); // Broadcast to others in the room
+  socket.on('send-message', async (data) => {
+    // Only allow if sender is current user and all recipients exist
+    if (data.senderId !== currentUserId) return;
+    // Optionally, check all participants in chat exist
+    // (Assume chatId is valid and participants are checked elsewhere)
+    socket.to(data.chatId).emit('receive-message', data);
   });
 
   // Handle typing events
-  socket.on("typing", ({ chatId, userId, isTyping }) => {
-    socket.to(chatId).emit("typing", { chatId, userId, isTyping });
+  socket.on('typing', ({ chatId, userId, isTyping }) => {
+    if (userId !== currentUserId) return;
+    socket.to(chatId).emit('typing', { chatId, userId, isTyping });
   });
 
   // Handle reactions
-  socket.on("message-reaction", ({ messageId, chatId, userId, emoji }) => {
-    socket.to(chatId).emit("message-reaction", {
+  socket.on('message-reaction', ({ messageId, chatId, userId, emoji }) => {
+    if (userId !== currentUserId) return;
+    socket.to(chatId).emit('message-reaction', {
       messageId,
       chatId,
       userId,
@@ -50,13 +66,8 @@ function socketHandler(io, socket) {
   });
 
   // On disconnect
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-
-    // Optionally broadcast user offline status
-    if (currentUserId) {
-      io.emit("user-left", { userId: currentUserId });
-    }
+  socket.on('disconnect', () => {
+    io.emit('user-left', { userId: currentUserId });
   });
 }
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { User, Chat, Message } from "../types";
 import ChatSidebar from "./ChatSidebar";
 import ChatWindow from "./ChatWindow";
-import { generateMockChats } from "../utils/mockData";
+import axios from "axios";
 import socket from "../utils/socket";
 import { v4 as uuidv4 } from "uuid";
 
@@ -24,17 +24,89 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const intervalRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    const mockChats = generateMockChats();
-    setChats(mockChats);
-    if (mockChats.length > 0) {
-      setActiveChat(mockChats[0].id);
-    }
+  // Get auth token
+  const getAuthToken = () => {
+    return localStorage.getItem("funkychat-token");
+  };
 
+  // Load user's chats from API
+  const loadChats = async () => {
+    try {
+      const token = getAuthToken();
+      const response = await axios.get(`http://localhost:5000/api/chats/${user._id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setChats(response.data);
+      if (response.data.length > 0) {
+        setActiveChat(response.data[0]._id);
+      }
+    } catch (error) {
+      console.error("Failed to load chats:", error);
+    }
+  };
+
+  // Search users
+  const searchUsers = async (query: string) => {
+    const token = getAuthToken();
+    // If query is empty or less than 2, show all users except self
+    if (!query || query.length < 2) {
+      try {
+        const response = await axios.get(`http://localhost:5000/api/chats/search/users?query=a&userId=${user._id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        // Filter out self
+        setSearchResults(response.data.filter((u: User) => u._id !== user._id));
+        setShowSearchResults(true);
+      } catch (error) {
+        setSearchResults([]);
+        setShowSearchResults(false);
+      }
+      return;
+    }
+    try {
+      const response = await axios.get(`http://localhost:5000/api/chats/search/users?query=${query}&userId=${user._id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSearchResults(response.data);
+      setShowSearchResults(true);
+    } catch (error) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+    }
+  };
+
+  // Create new chat
+  const createChat = async (participantId: string) => {
+    try {
+      const token = getAuthToken();
+      const response = await axios.post("http://localhost:5000/api/chats/create", {
+        participants: [user._id, participantId],
+        type: "direct"
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Add new chat to the list
+      setChats(prev => [...prev, response.data]);
+      setActiveChat(response.data._id);
+      setShowSearchResults(false);
+    } catch (error) {
+      console.error("Failed to create chat:", error);
+    }
+  };
+
+  useEffect(() => {
+    // Load chats on component mount
+    loadChats();
+
+    // Set up socket connection
     socket.connect();
 
+    // Set up socket event listeners
     socket.on("receive-message", (data) => {
       const newMessage: Message = {
         ...data,
@@ -43,12 +115,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       setChats((prevChats) =>
         prevChats.map((chat) =>
-          chat.id === data.chatId
+          chat._id === data.chatId
             ? {
                 ...chat,
                 messages: [...chat.messages, newMessage],
                 lastMessage: newMessage,
-                unreadCount: chat.id === activeChat ? 0 : chat.unreadCount + 1,
+                unreadCount: chat._id === activeChat ? 0 : chat.unreadCount + 1,
               }
             : chat
         )
@@ -73,67 +145,27 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       );
     });
 
-    socket.on("message-reaction", (data) => {
-      setChats((prevChats) =>
-        prevChats.map((chat) =>
-          chat.id === data.chatId
-            ? {
-                ...chat,
-                messages: chat.messages.map((message) =>
-                  message.id === data.messageId
-                    ? {
-                        ...message,
-                        reactions: [
-                          ...message.reactions.filter(
-                            (r) => r.userId !== data.userId
-                          ),
-                          { userId: data.userId, emoji: data.emoji },
-                        ],
-                      }
-                    : message
-                ),
-              }
-            : chat
-        )
-      );
-    });
-
-    return () => {
-      socket.off("receive-message");
-      socket.off("user-joined");
-      socket.off("user-left");
-      socket.off("users-online");
-      socket.off("typing");
-      socket.off("message-reaction");
-      socket.disconnect();
-
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (activeChat) {
-      socket.emit("join-room", {
-        chatId: activeChat,
-        userId: user.id,
-      });
-    }
-  }, [activeChat, user.id]);
-
-  useEffect(() => {
-    const checkMobile = () => {
+    // Handle mobile responsiveness
+    const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
       if (window.innerWidth >= 768) {
         setShowSidebar(true);
       }
     };
 
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      socket.off("receive-message");
+      socket.off("user-joined");
+      socket.off("user-left");
+      socket.off("users-online");
+      socket.off("typing");
+    };
+  }, [user._id, activeChat]);
 
   const handleSendMessage = (
     content: string,
@@ -144,7 +176,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     const newMessage: Message = {
       id: messageId,
-      senderId: user.id,
+      senderId: user._id,
       content,
       type,
       timestamp,
@@ -153,7 +185,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     socket.emit("send-message", {
       id: messageId,
-      senderId: user.id,
+      senderId: user._id,
       content,
       type,
       timestamp: timestamp.toISOString(),
@@ -163,7 +195,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     setChats((prevChats) =>
       prevChats.map((chat) =>
-        chat.id === activeChat
+        chat._id === activeChat
           ? {
               ...chat,
               messages: [...chat.messages, newMessage],
@@ -179,13 +211,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     if (activeChat) {
       socket.emit("leave-room", {
         chatId: activeChat,
-        userId: user.id,
+        userId: user._id,
       });
     }
 
     setChats((prevChats) =>
       prevChats.map((chat) =>
-        chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
+        chat._id === chatId ? { ...chat, unreadCount: 0 } : chat
       )
     );
 
@@ -197,27 +229,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     socket.emit("message-reaction", {
       messageId,
       chatId: activeChat,
-      userId: user.id,
+      userId: user._id,
       emoji,
     });
 
     setChats((prevChats) =>
       prevChats.map((chat) =>
-        chat.id === activeChat
+        chat._id === activeChat
           ? {
               ...chat,
-              messages: chat.messages.map((message) =>
-                message.id === messageId
+              messages: chat.messages.map((msg) =>
+                msg.id === messageId
                   ? {
-                      ...message,
-                      reactions: [
-                        ...message.reactions.filter(
-                          (r) => r.userId !== user.id
-                        ),
-                        { userId: user.id, emoji },
-                      ],
+                      ...msg,
+                      reactions: [...msg.reactions, { userId: user._id, emoji }],
                     }
-                  : message
+                  : msg
               ),
             }
           : chat
@@ -225,12 +252,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     );
   };
 
-  const currentChat = chats.find((chat) => chat.id === activeChat);
+  const currentChat = chats.find((chat) => chat._id === activeChat);
 
   return (
     <div className="h-screen flex bg-gray-50 dark:bg-gray-900">
       <div
-        className={`$${
+        className={`${
           isMobile
             ? showSidebar
               ? "fixed inset-0 z-50"
@@ -251,6 +278,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           onCloseSidebar={() => setShowSidebar(false)}
           isMobile={isMobile}
           onlineUsers={onlineUsers}
+          onSearchUsers={searchUsers}
+          searchResults={searchResults}
+          showSearchResults={showSearchResults}
+          onHideSearchResults={() => setShowSearchResults(false)}
+          onCreateChat={createChat}
         />
       </div>
 

@@ -8,6 +8,7 @@ import {
   LogOut,
   X,
   Users,
+  UserPlus,
 } from "lucide-react";
 import { User, Chat } from "../types";
 import socket from "../utils/socket";
@@ -22,6 +23,12 @@ interface ChatSidebarProps {
   onToggleTheme: () => void;
   onCloseSidebar: () => void;
   isMobile: boolean;
+  onlineUsers: string[];
+  onSearchUsers: (query: string) => void;
+  searchResults: User[];
+  showSearchResults: boolean;
+  onHideSearchResults: () => void;
+  onCreateChat: (participantId: string) => void;
 }
 
 const ChatSidebar: React.FC<ChatSidebarProps> = ({
@@ -34,18 +41,23 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
   onToggleTheme,
   onCloseSidebar,
   isMobile,
+  onlineUsers,
+  onSearchUsers,
+  searchResults,
+  showSearchResults,
+  onHideSearchResults,
+  onCreateChat,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [showSettings, setShowSettings] = useState(false);
-  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
   useEffect(() => {
-    if (user && user.id) {
-      socket.emit("join", user.id);
+    if (user && user._id) {
+      socket.emit("join", user._id);
     }
 
     socket.on("updateOnlineUsers", (ids: string[]) => {
-      setOnlineUsers(ids);
+      // This will be handled by the parent component
     });
 
     return () => {
@@ -57,9 +69,19 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
     (chat) =>
       chat.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       chat.participants.some((p) =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
+        p && p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase())
       )
   );
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    onSearchUsers(value);
+  };
+
+  const handleSearchFocus = () => {
+    onSearchUsers(""); // Show all users except self
+  };
 
   const formatTime = (date: Date) => {
     const now = new Date();
@@ -118,9 +140,10 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
           <Search className="w-5 h-5 absolute left-3 top-3 text-gray-400" />
           <input
             type="text"
-            placeholder="Search chats..."
+            placeholder="Search chats or users..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={handleSearchChange}
+            onFocus={handleSearchFocus}
             className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
         </div>
@@ -152,6 +175,39 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
         </div>
       )}
 
+      {/* Search Results */}
+      {showSearchResults && searchResults.length > 0 && (
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="font-semibold text-gray-800 dark:text-white mb-3">
+            Search Results
+          </h3>
+          <div className="space-y-2">
+            {searchResults.map((result) => (
+              <button
+                key={result._id}
+                onClick={() => onCreateChat(result._id)}
+                className="w-full flex items-center gap-3 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <img
+                  src={result.avatar}
+                  alt={result.name}
+                  className="w-8 h-8 rounded-full"
+                />
+                <div className="flex-1 text-left">
+                  <p className="font-medium text-gray-800 dark:text-white">
+                    {result.name}
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    @{result.username}
+                  </p>
+                </div>
+                <UserPlus className="w-4 h-4 text-gray-400" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Chat List */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-2">
@@ -166,18 +222,18 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
           {filteredChats.map((chat) => {
             const otherParticipant = chat.participants.find(
-              (p) => p.id !== user.id
+              (p) => p && p._id !== user._id
             );
             const displayName =
               chat.name || otherParticipant?.name || "Unknown";
             const displayAvatar = chat.avatar || otherParticipant?.avatar || "";
-            const isActive = chat.id === activeChat;
-            const isOnline = onlineUsers.includes(otherParticipant?.id || "");
+            const isActive = chat._id === activeChat;
+            const isOnline = onlineUsers.includes(otherParticipant?._id || "");
 
             return (
               <button
-                key={chat.id}
-                onClick={() => onChatSelect(chat.id)}
+                key={chat._id}
+                onClick={() => onChatSelect(chat._id)}
                 className={`w-full p-3 rounded-xl mb-2 transition-all duration-200 ${
                   isActive
                     ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white transform scale-[0.98]"
@@ -201,45 +257,26 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                     )}
                   </div>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <h4
-                        className={`font-semibold truncate ${
-                          isActive
-                            ? "text-white"
-                            : "text-gray-800 dark:text-white"
-                        }`}
-                      >
-                        {displayName}
-                      </h4>
-                      {chat.lastMessage && (
-                        <span
-                          className={`text-xs ${
-                            isActive
-                              ? "text-purple-100"
-                              : "text-gray-500 dark:text-gray-400"
-                          }`}
-                        >
-                          {formatTime(chat.lastMessage.timestamp)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p
-                        className={`text-sm truncate ${
-                          isActive
-                            ? "text-purple-100"
-                            : "text-gray-600 dark:text-gray-400"
-                        }`}
-                      >
-                        {chat.lastMessage?.content || "No messages yet"}
+                  <div className="flex-1 text-left">
+                    <h4 className="font-medium">{displayName}</h4>
+                    {chat.lastMessage && (
+                      <p className="text-sm opacity-75 truncate">
+                        {chat.lastMessage.content}
                       </p>
-                      {chat.unreadCount > 0 && (
-                        <div className="bg-red-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px] h-5 flex items-center justify-center">
-                          {chat.unreadCount}
-                        </div>
-                      )}
-                    </div>
+                    )}
+                  </div>
+
+                  <div className="text-right">
+                    {chat.lastMessage && (
+                      <p className="text-xs opacity-75">
+                        {formatTime(chat.lastMessage.timestamp)}
+                      </p>
+                    )}
+                    {chat.unreadCount > 0 && (
+                      <div className="mt-1 w-5 h-5 bg-purple-500 text-white text-xs rounded-full flex items-center justify-center">
+                        {chat.unreadCount}
+                      </div>
+                    )}
                   </div>
                 </div>
               </button>
