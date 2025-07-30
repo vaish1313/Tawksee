@@ -1,7 +1,8 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL:
+    import.meta.env.VITE_BACKEND_URL || "https://tawksee-backend.onrender.com",
 });
 
 API.interceptors.request.use((config) => {
