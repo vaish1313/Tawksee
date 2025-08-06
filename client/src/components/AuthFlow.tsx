@@ -1,5 +1,13 @@
 import React, { useState } from "react";
-import { ArrowLeft, User, Lock, Mail, Phone, ArrowRight, CheckCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  User,
+  Lock,
+  Mail,
+  Phone,
+  ArrowRight,
+  CheckCircle,
+} from "lucide-react";
 import axios from "axios";
 import socket from "../utils/socket";
 
@@ -8,9 +16,9 @@ interface AuthFlowProps {
 }
 
 const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
-  const [step, setStep] = useState<"method" | "input" | "otp" | "profile" | "success" | "login">(
-    "method"
-  );
+  const [step, setStep] = useState<
+    "method" | "input" | "otp" | "profile" | "success" | "login"
+  >("method");
   const [method, setMethod] = useState<"email" | "phone">("email");
   const [contact, setContact] = useState("");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -33,7 +41,12 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
     setIsLoading(true);
     setError("");
     try {
-      await axios.post("http://localhost:5000/api/auth/request-otp", { contact });
+      await axios.post(
+        "https://tawksee-backend.onrender.com/api/auth/request-otp",
+        {
+          contact,
+        }
+      );
       setStep("otp");
     } catch (error: any) {
       setError(error?.response?.data?.error || "Failed to send OTP");
@@ -64,7 +77,7 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
         return;
       }
       const response = await axios.post(
-        "http://localhost:5000/api/auth/verify-otp",
+        "https://tawksee-backend.onrender.com/api/auth/verify-otp",
         {
           contact,
           otp: otp.join(""),
@@ -78,7 +91,7 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
       const userWithId = {
         ...user,
         _id: user._id || user.id, // Handle both formats
-        username: user.username || user._id || user.id // Fallback to _id if username not present
+        username: user.username || user._id || user.id, // Fallback to _id if username not present
       };
       localStorage.setItem("funkychat-user", JSON.stringify(userWithId));
       setStep("success");
@@ -99,16 +112,19 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
     setIsLoading(true);
     setError("");
     try {
-      const response = await axios.post("http://localhost:5000/api/auth/login", {
-        username: username.trim(),
-      });
+      const response = await axios.post(
+        "https://tawksee-backend.onrender.com/api/auth/login",
+        {
+          username: username.trim(),
+        }
+      );
       const { token, user } = response.data;
       localStorage.setItem("funkychat-token", token);
       // Ensure user object has the correct structure
       const userWithId = {
         ...user,
         _id: user._id || user.id, // Handle both formats
-        username: user.username || user._id || user.id // Fallback to _id if username not present
+        username: user.username || user._id || user.id, // Fallback to _id if username not present
       };
       localStorage.setItem("funkychat-user", JSON.stringify(userWithId));
       onSuccess();
@@ -199,7 +215,9 @@ const AuthFlow: React.FC<AuthFlowProps> = ({ onSuccess }) => {
                   inputMode="numeric"
                   maxLength={1}
                   value={digit}
-                  onChange={(e) => handleOTPChange(idx, e.target.value.replace(/\D/g, ""))}
+                  onChange={(e) =>
+                    handleOTPChange(idx, e.target.value.replace(/\D/g, ""))
+                  }
                   className="w-12 h-12 text-2xl text-center border-2 border-gray-300 rounded-xl focus:border-purple-500 outline-none bg-white/70 dark:bg-gray-700/70"
                 />
               ))}
